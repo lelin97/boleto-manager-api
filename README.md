@@ -1,51 +1,107 @@
-Este repositório contém o backend de um sistema de CRUD (Criar, Ler, Atualizar e Excluir) de boletos. 
+# Boleto Manager — API
 
-Funcionalidades:
+> Technical challenge built for a job application process. Shared here as a code sample.
 
-Gerenciamento de boletos:
+REST API for managing **boletos** (Brazilian bank payment slips): create, list, update and delete them, and mark one or many as paid, with late fees calculated automatically. It's consumed by the front-end in [boleto-manager-web](https://github.com/lelin97/boleto-manager-web).
 
-Criar novos boletos.
+## The challenge
 
-Ler todos os boletos ou boletos específicos.
+Build a full CRUD for boletos, with a front-end and a back-end. Each boleto has a description, due date, amount, late fee and interest, and can be marked as paid ("baixa", in Brazilian finance terms).
 
-Atualizar as informações de um boleto.
+## What was delivered
 
-Excluir um boleto.
+- **CRUD endpoints** for boletos, with request validation using **Zod**
+- **Bulk payment:** mark several boletos as paid in a single request
+- **Automatic late fee on payment:** if a boleto is paid after its due date, the fee is calculated from the interest rate and the number of days overdue, and the total amount is updated
+- Duplicate check on creation (by description)
+- A consistent response shape for every endpoint and proper `400` / `500` status codes
+- Structured logging with **Pino**
+- A **TypeORM migration** that seeds the database with sample data
 
-Tecnologias utilizadas:
-Node.js
-Express
-Typeorm
-PostgresSQL
-Zod
+## Tech stack
 
-Como usar:
+Node.js 18 · TypeScript · Express · TypeORM · PostgreSQL · Zod · Pino · date-fns
 
-Clone este repositório para o seu computador.
-Execute o comando no terminal `yarn`
+## Getting started
 
-Tenha o Docker instalado em sua máquina
+**Requirements:** Node.js 18 (see `.nvmrc`), yarn and Docker.
 
-Execute o comando no CMD `docker run --name ct-db -p 5432:5432 -e POSTGRES_USER=user-ct -e POSTGRES_PASSWORD=12345678 -e POSTGRES_DB=ctech-db -d postgres`
+**1. Start a PostgreSQL container**
 
-Descomente o arquivo `env.example` para `.env`
+```bash
+docker run --name ct-db -p 5432:5432 -e POSTGRES_USER=user-ct -e POSTGRES_PASSWORD=12345678 -e POSTGRES_DB=ctech-db -d postgres
+```
 
-Coloque esses comandos no arquivo `.env`
+**2. Configure the environment**
 
-`DB_HOST=localhost`
+Copy `env.example` to `.env`. The default values already match the container above:
 
-`DB_PORT=5432`
+```
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=user-ct
+DB_PASSWORD=12345678
+DB_NAME=ctech-db
+```
 
-`DB_USER=user-ct`
+**3. Install and run**
 
-`DB_PASSWORD=12345678`
+```bash
+yarn
+yarn start
+```
 
-`DB_NAME=ctech-db`
+The API runs on `http://localhost:4050`. To seed the database with sample boletos, run `yarn migration:run` and start the API again.
 
-Execute o comando `yarn start`
+## Endpoints
 
-Caso deseje popular as tabelas do Banco
+All routes are under `/boletos`.
 
-Execute o comando `yarn migration:run`
+| Method | Route | Description |
+| ------ | ----- | ----------- |
+| `GET` | `/listar-boleto` | List all boletos |
+| `POST` | `/criar-boleto` | Create a boleto |
+| `PUT` | `/atualizar-boleto/:id_boleto` | Update a boleto |
+| `PUT` | `/baixa-boleto/:usuario_cadastro` | Mark boletos as paid (body: array of boleto IDs) |
+| `DELETE` | `/deletar-boleto/:id_boleto` | Delete a boleto |
 
-Execute o comando `yarn start`
+Request body for create and update:
+
+```json
+{
+  "descricao": "Internet bill",
+  "dt_venc": "2024-07-10",
+  "valor": 120,
+  "valor_multa": 2,
+  "juros": 1
+}
+```
+
+Every response follows the same shape:
+
+```json
+{ "sucesso": true, "mensagem": "...", "data": [] }
+{ "sucesso": false, "mensagem": "...", "erro": "..." }
+```
+
+## Project structure
+
+- **`src/routes`** — Express routers; each route validates input with Zod and delegates to a service
+- **`src/services/Boletos`** — One class per use case (create, list, update, delete, mark as paid), each with an `executar` method
+- **`src/models`** — TypeORM entity for the `boletos` table
+- **`src/zod`** — Validation schemas for request bodies and params
+- **`src/migrations`** — Seed data
+- **`src/types`** — The `RetornoDB` response contract shared by all services
+
+## Design decisions
+
+- **One service per use case:** routes only handle HTTP concerns (validation, status codes, logging), while business rules live in small, focused service classes.
+- **Validation at the edge:** every body and route param is parsed with Zod before reaching a service, so invalid input never touches the database.
+- **Late fees calculated at payment time:** the fee depends on how many days have passed since the due date, so it's computed when the boleto is actually paid rather than stored upfront.
+
+## With more time, I would add
+
+- Unit tests for the services and integration tests for the routes
+- Await each update inside the bulk-payment transaction (it currently runs them in a `forEach` with async callbacks), so the transaction truly covers all of them
+- Authentication, replacing the fixed user ID used when creating boletos
+- A `docker-compose.yml` to start the database and the API with a single command
